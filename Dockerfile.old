@@ -1,7 +1,7 @@
 # Base image
 FROM python:3.9-slim
 
-# Install system dependencies, build tools, and libraries in a single layer
+# Install system dependencies, build tools, and libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     wget \
@@ -43,44 +43,45 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libharfbuzz-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install SRT from source with shallow clone
-RUN git clone --depth=1 https://github.com/Haivision/srt.git && \
+# Install SRT from source (latest version using cmake)
+RUN git clone https://github.com/Haivision/srt.git && \
     cd srt && \
     mkdir build && cd build && \
-    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    cmake .. && \
     make -j$(nproc) && \
     make install && \
     cd ../.. && rm -rf srt
 
-# Install SVT-AV1 from source with shallow clone
-RUN git clone --depth=1 -b v0.9.0 https://gitlab.com/AOMediaCodec/SVT-AV1.git && \
-    cd SVT-AV1/Build && \
-    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+# Install SVT-AV1 from source
+RUN git clone https://gitlab.com/AOMediaCodec/SVT-AV1.git && \
+    cd SVT-AV1 && \
+    git checkout v0.9.0 && \
+    cd Build && \
+    cmake .. && \
     make -j$(nproc) && \
     make install && \
     cd ../.. && rm -rf SVT-AV1
 
-# Install libvmaf from source with shallow clone
-RUN git clone --depth=1 https://github.com/Netflix/vmaf.git && \
+# Install libvmaf from source
+RUN git clone https://github.com/Netflix/vmaf.git && \
     cd vmaf/libvmaf && \
     meson build --buildtype release && \
     ninja -C build && \
     ninja -C build install && \
     cd ../.. && rm -rf vmaf && \
-    ldconfig
+    ldconfig  # Update the dynamic linker cache
 
-# Manually build and install fdk-aac with shallow clone
-RUN git clone --depth=1 https://github.com/mstorsjo/fdk-aac && \
+# Manually build and install fdk-aac (since it is not available via apt-get)
+RUN git clone https://github.com/mstorsjo/fdk-aac && \
     cd fdk-aac && \
     autoreconf -fiv && \
-    ./configure --enable-shared && \
+    ./configure && \
     make -j$(nproc) && \
     make install && \
-    cd .. && rm -rf fdk-aac && \
-    ldconfig
+    cd .. && rm -rf fdk-aac
 
-# Install libunibreak with shallow clone
-RUN git clone --depth=1 https://github.com/adah1972/libunibreak.git && \
+# Install libunibreak (required for ASS_FEATURE_WRAP_UNICODE)
+RUN git clone https://github.com/adah1972/libunibreak.git && \
     cd libunibreak && \
     ./autogen.sh && \
     ./configure && \
@@ -89,25 +90,23 @@ RUN git clone --depth=1 https://github.com/adah1972/libunibreak.git && \
     ldconfig && \
     cd .. && rm -rf libunibreak
 
-# Build and install libass with shallow clone
-RUN git clone --depth=1 https://github.com/libass/libass.git && \
+# Build and install libass with libunibreak support and ASS_FEATURE_WRAP_UNICODE enabled
+RUN git clone https://github.com/libass/libass.git && \
     cd libass && \
     autoreconf -i && \
-    ./configure --enable-libunibreak && \
-    make -j$(nproc) && \
+    ./configure --enable-libunibreak || { cat config.log; exit 1; } && \
+    mkdir -p /app && echo "Config log located at: /app/config.log" && cp config.log /app/config.log && \
+    make -j$(nproc) || { echo "Libass build failed"; exit 1; } && \
     make install && \
     ldconfig && \
     cd .. && rm -rf libass
 
-# Build and install FFmpeg with shallow clone and optimized flags
-# Split into smaller steps to better utilize Docker caching
-RUN git clone --depth=1 -b n7.0.2 https://git.ffmpeg.org/ffmpeg.git ffmpeg
-
-WORKDIR /ffmpeg
-
-# Configure FFmpeg with all required options
-RUN PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" \
-    CFLAGS="-I/usr/include/freetype2 -O3" \
+# Build and install FFmpeg with all required features
+RUN git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg && \
+    cd ffmpeg && \
+    git checkout n7.0.2 && \
+    PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" \
+    CFLAGS="-I/usr/include/freetype2" \
     LDFLAGS="-L/usr/lib/x86_64-linux-gnu" \
     ./configure --prefix=/usr/local \
         --enable-gpl \
@@ -136,19 +135,12 @@ RUN PKG_CONFIG_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfi
         --enable-filter=drawtext \
         --extra-cflags="-I/usr/include/freetype2 -I/usr/include/libpng16 -I/usr/include" \
         --extra-ldflags="-L/usr/lib/x86_64-linux-gnu -lfreetype -lfontconfig" \
-        --enable-gnutls
+        --enable-gnutls \
+    && make -j$(nproc) && \
+    make install && \
+    cd .. && rm -rf ffmpeg
 
-# Build FFmpeg (where it was hanging before)
-RUN make -j$(nproc)
-
-# Install FFmpeg and clean up
-RUN make install && \
-    cd .. && \
-    rm -rf ffmpeg
-
-WORKDIR /
-
-# Add /usr/local/bin to PATH
+# Add /usr/local/bin to PATH (if not already included)
 ENV PATH="/usr/local/bin:${PATH}"
 
 # Copy fonts into the custom fonts directory
@@ -163,25 +155,25 @@ WORKDIR /app
 # Set environment variable for Whisper cache
 ENV WHISPER_CACHE_DIR="/app/whisper_cache"
 
-# Create cache directory
-RUN mkdir -p ${WHISPER_CACHE_DIR}
+# Create cache directory (no need for chown here yet)
+RUN mkdir -p ${WHISPER_CACHE_DIR} 
 
 # Copy the requirements file first to optimize caching
 COPY requirements.txt .
 
-# Install Python dependencies, upgrade pip
+# Install Python dependencies, upgrade pip 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install openai-whisper && \
-    pip install jsonschema
+    pip install jsonschema 
 
-# Create the appuser
-RUN useradd -m appuser
+# Create the appuser 
+RUN useradd -m appuser 
 
-# Give appuser ownership of the /app directory
-RUN chown appuser:appuser /app
+# Give appuser ownership of the /app directory (including whisper_cache)
+RUN chown appuser:appuser /app 
 
-# Switch to the appuser before downloading the model
+# Important: Switch to the appuser before downloading the model
 USER appuser
 
 RUN python -c "import os; print(os.environ.get('WHISPER_CACHE_DIR')); import whisper; whisper.load_model('base')"
