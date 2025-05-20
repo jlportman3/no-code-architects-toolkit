@@ -101,7 +101,17 @@ RUN git clone --depth=1 https://github.com/libass/libass.git && \
 
 # Build and install FFmpeg with shallow clone and optimized flags
 # Split into smaller steps to better utilize Docker caching
-RUN git clone --depth=1 -b n7.0.2 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+#RUN git clone --depth=1 -b n7.0.2 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+# Replace the problematic git clone line with a direct download
+# Replace this line:
+# RUN git clone --depth=1 -b n7.0.2 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+# With these lines:
+
+RUN apt-get update && apt-get install -y wget && \
+    wget -O ffmpeg-7.0.2.tar.xz https://ffmpeg.org/releases/ffmpeg-7.0.2.tar.xz && \
+    mkdir -p ffmpeg && \
+    tar -xf ffmpeg-7.0.2.tar.xz -C ffmpeg --strip-components=1 && \
+    rm ffmpeg-7.0.2.tar.xz
 
 WORKDIR /ffmpeg
 
@@ -190,13 +200,13 @@ RUN python -c "import os; print(os.environ.get('WHISPER_CACHE_DIR')); import whi
 COPY . .
 
 # Expose the port the app runs on
-EXPOSE 8080
+EXPOSE 8081
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
 RUN echo '#!/bin/bash\n\
-gunicorn --bind 0.0.0.0:8080 \
+gunicorn --bind 0.0.0.0:8081 \
     --workers ${GUNICORN_WORKERS:-2} \
     --timeout ${GUNICORN_TIMEOUT:-300} \
     --worker-class sync \
