@@ -1,0 +1,11 @@
+FROM minio/minio:latest
+
+# Default root credentials (can be overridden at runtime)
+ENV MINIO_ROOT_USER=minioadmin
+ENV MINIO_ROOT_PASSWORD=minioadmin
+
+# Expose API and console ports
+EXPOSE 9000 9001
+
+# Run MinIO server with console enabled
+CMD ["server", "/data", "--console-address", ":9001"]
