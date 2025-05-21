@@ -207,7 +207,7 @@ Each endpoint is supported by robust payload validation and detailed API documen
 ### Run the Docker Container:
 
    ```bash
-   docker run -d -p 8080:8080 \
+   docker run -d -p 8081:8081 \
      # Authentication (required)
      -e API_KEY=your_api_key \
      
