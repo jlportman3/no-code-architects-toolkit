@@ -277,11 +277,26 @@ They also have a GPU option that might be usable for better performance (unteste
 
 ### General Docker Instructions
 
-You can use these instructions to deploy the NCA Toolkit to any linux server (on any platform)
+You can use these instructions to deploy the NCA Toolkit to any Linux server (on any platform).
 
-You can more easily control performance and cost this way, but requires more technical skill to get up and running (not much though).
+You can more easily control performance and cost this way, but it requires a bit more technical skill to get up and running (not much though).
 
 - [General Docker Compose Installation Guide](https://github.com/stephengpope/no-code-architects-toolkit/blob/main/docker-compose.md)
+
+### Zero-Touch Startup
+
+For a quick local setup, a helper script `zero_touch_setup.sh` is included in the repository. It will:
+
+1. Generate an API key and write a `.env` file if one does not exist.
+2. Build the Docker images and start the `ncat` and `minio` services.
+3. Create the configured S3 bucket using the running containers.
+4. Perform a health check by calling the [`/v1/toolkit/test`](docs/toolkit/test.md) endpoint.
+
+Run the script from the project root:
+
+```bash
+./zero_touch_setup.sh
+```
 
 ## Testing the API
 
